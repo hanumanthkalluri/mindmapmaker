@@ -1,12 +1,16 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import fs from 'fs';
 import path from 'path';
 
+
+dotenv.config();
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // Gemini API Configuration with fallback
 const GEMINI_API_KEY = 'AIzaSyDEMyLzfLVxgHduJBiVpMEhr-AsH0kDbPc';
@@ -21,7 +25,55 @@ try {
 } catch (error) {
   console.log('⚠️ Gemini API initialization failed, using fallback mode');
 }
+app.use(cors());
+app.use(express.json());
 
+// MongoDB Connection
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/mindmap';
+
+mongoose.connect(MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log('✅ Connected to MongoDB'))
+.catch((err) => console.error('❌ MongoDB connection error:', err));
+
+// User Schema & Model
+const userSchema = new mongoose.Schema({
+  email: String,
+  password: String,
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+const User = mongoose.model('User', userSchema);
+
+// Routes
+
+// POST /api/login
+app.post('/api/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      user = new User({ email, password });
+      await user.save();
+      return res.status(201).json({ message: '✅ New user created and logged in' });
+    }
+
+    if (user.password !== password) {
+      return res.status(401).json({ message: '❌ Invalid password' });
+    }
+
+    res.json({ message: '✅ User logged in successfully' });
+  } catch (error) {
+    res.status(500).json({ message: '❌ Server error', error });
+  }
+  });
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -795,9 +847,13 @@ app.get('/api/use-cases', (req, res) => {
   
   res.json(useCases);
 });
-
-app.listen(5000, () => {
+// Health Check
+app.get('/api/health', (req, res) => {
+  res.json({ status: '🟢 API is healthy' });
+});
+app.listen(PORT, () => {
   console.log(`🚀 Server running on port 5000`);
   console.log(`📡 API endpoints available at http://localhost:${PORT}/api`);
   console.log(`🤖 AI Status: ${model ? 'Gemini API Ready' : 'Fallback Mode'}`);
+
 });
